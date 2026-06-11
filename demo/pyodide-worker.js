@@ -23,7 +23,9 @@ function mkdirs(dir) {
 }
 
 async function fetchToFS(url, path) {
-  const r = await fetch(url);
+  // no-cache: always revalidate with the server (cheap 304s) so a deploy
+  // with a new map or core never pairs with stale cached data files.
+  const r = await fetch(url, { cache: "no-cache" });
   if (!r.ok) throw new Error(`fetch ${url} -> HTTP ${r.status}`);
   const data = new Uint8Array(await r.arrayBuffer());
   mkdirs(path.split("/").slice(0, -1).join("/"));
@@ -36,7 +38,8 @@ async function init() {
   boot("loading numpy / scipy / scikit-image… (~60 MB, cached after first visit)");
   await pyodide.loadPackage(["numpy", "scipy", "scikit-image", "pillow"]);
   boot("installing raceline core…");
-  const manifest = await (await fetch("py/manifest.json")).json();
+  const manifest = await (await fetch("py/manifest.json",
+                                      { cache: "no-cache" })).json();
   for (const f of manifest) await fetchToFS("py/" + f, "/" + f);
   for (const f of ["map.yaml", "map.png", "icra2026_map_raceline.csv",
                    "centerline.csv"]) {

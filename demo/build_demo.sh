@@ -27,4 +27,16 @@ cp "$ROOT"/maps/icra2026_map/map.yaml "$ROOT"/maps/icra2026_map/map.png \
 [ -f "$ROOT/maps/icra2026_map/centerline.csv" ] && \
   cp "$ROOT/maps/icra2026_map/centerline.csv" "$DIST/maps/"
 
-echo "demo built -> $DIST"
+# Cache busting: stamp a build id into the worker URL and the asset links
+# so a deploy invalidates cached copies immediately (Pages caches 10 min).
+VERSION="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || date +%s)"
+sed -i.bak "s/__BUILD__/$VERSION/g" "$DIST/js/api.js"
+sed -i.bak \
+  -e "s|href=\"fonts.css\"|href=\"fonts.css?v=$VERSION\"|" \
+  -e "s|href=\"css/studio.css\"|href=\"css/studio.css?v=$VERSION\"|" \
+  -e "s|src=\"vendor/gsap.min.js\"|src=\"vendor/gsap.min.js?v=$VERSION\"|" \
+  -e "s|src=\"js/main.js\"|src=\"js/main.js?v=$VERSION\"|" \
+  "$DIST/index.html"
+rm -f "$DIST/js/api.js.bak" "$DIST/index.html.bak"
+
+echo "demo built -> $DIST (build $VERSION)"

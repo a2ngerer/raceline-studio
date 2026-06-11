@@ -16,7 +16,9 @@ export function onConn(cb) { connListeners.push(cb); cb(connState); }
 export function connOk() { return connState === "ok"; }
 
 /* ---- worker RPC ---- */
-const worker = new Worker("pyodide-worker.js");
+// __BUILD__ is stamped by demo/build_demo.sh — a new deploy always loads
+// the matching worker instead of a cached one.
+const worker = new Worker("pyodide-worker.js?v=__BUILD__");
 let seq = 0;
 const pending = new Map();
 const sseHandlers = [];
