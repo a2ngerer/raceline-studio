@@ -19,6 +19,23 @@ export function connOk() { return connState === "ok"; }
 // __BUILD__ is stamped by demo/build_demo.sh — a new deploy always loads
 // the matching worker instead of a cached one.
 const worker = new Worker("pyodide-worker.js?v=__BUILD__");
+
+/* demo small print: this build is a demo — the desktop version does more */
+(function injectDemoNote() {
+  const conn = document.getElementById("connText");
+  if (!conn || document.getElementById("demoNote")) return;
+  const sep = document.createElement("span");
+  sep.className = "st-sep";
+  const n = document.createElement("span");
+  n.id = "demoNote";
+  n.className = "st-demo";
+  const repo = '<a href="https://github.com/a2ngerer/raceline-studio" '
+    + 'target="_blank" rel="noopener">full version</a>';
+  n.innerHTML = `<b>DEMO</b><span class="long">&nbsp;— limited build, the
+    ${repo} does more (own maps, car upload)</span><span class="short">&nbsp;·
+    ${repo} does more</span>`;
+  conn.after(sep, n);
+})();
 let seq = 0;
 const pending = new Map();
 const sseHandlers = [];

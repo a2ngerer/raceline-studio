@@ -461,3 +461,20 @@ input[type=range]::-webkit-slider-thumb {
   .modes button[data-mode="cert"],
   .modes button[data-mode="map"] { display: none; }
 }
+
+/* demo small print (element only exists in the demo build) */
+.st-demo { color: var(--ink-3); white-space: nowrap; }
+.st-demo b { color: var(--warn); font-weight: 700; letter-spacing: .08em; }
+.st-demo a { color: var(--acc); text-decoration: none; }
+.st-demo a:hover { text-decoration: underline; }
+.st-demo .short { display: none; }
+@media (max-width: 720px) {
+  .st-demo .long { display: none; }
+  .st-demo .short { display: inline; }
+}
+@media (max-width: 540px) {
+  /* tight phones: the demo note outranks the autosave label */
+  #autosaveText { display: none; }
+}
+
+.st-conn { white-space: nowrap; }
