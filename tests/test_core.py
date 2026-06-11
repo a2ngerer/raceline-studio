@@ -6,14 +6,15 @@ import pytest
 
 from raceline_studio.core.centerline import fast_centerline
 from raceline_studio.core.io_utils import (
-    compute_velocity, load_csv, load_map,
+    compute_velocity, load_centerline_file, load_csv, load_map,
 )
 from raceline_studio.core.optimize import lap_time, run_optimization
 from raceline_studio.core.vehicle_params import VehicleParams
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAP_YAML = os.path.join(ROOT, "maps", "demo", "map.yaml")
-RACELINE = os.path.join(ROOT, "maps", "demo", "demo_raceline.csv")
+MAP_YAML = os.path.join(ROOT, "maps", "icra2026_map", "map.yaml")
+RACELINE = os.path.join(ROOT, "maps", "icra2026_map",
+                        "icra2026_map_raceline.csv")
 
 
 @pytest.fixture(scope="module")
@@ -28,28 +29,28 @@ def _length(pts, closed=True):
     return float(np.linalg.norm(np.diff(loop, axis=0), axis=1).sum())
 
 
-def test_centerline_spans_track(demo_map):
+def test_centerline_no_hint_finds_a_loop(demo_map):
+    # The map's free space extends beyond the course, so without a hint or
+    # region only "some closed loop" is guaranteed — not full coverage.
     raw, res, origin = demo_map
     cl = fast_centerline(raw, res, origin, closed=True)
-    assert _length(cl) > 30.0, "centerline collapsed to a partial loop"
-    # spans most of the free space, not a pocket
-    free_rc = np.argwhere(raw == 0)
-    span_free = np.ptp(free_rc, axis=0) * res
-    span_cl = np.ptp(np.asarray(cl), axis=0)
-    assert span_cl[0] > 0.7 * span_free[1]
-    assert span_cl[1] > 0.6 * span_free[0]
+    assert _length(cl) > 30.0, "centerline collapsed"
 
 
-def test_centerline_region_restricts(demo_map):
+def test_centerline_full_track_with_region(demo_map):
+    # The shipped configuration: centerline hint + a region around the
+    # raceline must recover the full course and stay inside the region.
     raw, res, origin = demo_map
-    # left half of the world bounding box
-    H, W = raw.shape
-    x0, y0 = origin
-    x_mid = x0 + 0.45 * W * res
-    region = [[x0, y0], [x_mid, y0],
-              [x_mid, y0 + H * res], [x0, y0 + H * res]]
-    cl = fast_centerline(raw, res, origin, closed=True, region_xy=region)
-    assert np.asarray(cl)[:, 0].max() <= x_mid + 0.2
+    hint = load_centerline_file(MAP_YAML, True)
+    rl = np.asarray(load_csv(RACELINE), dtype=float)
+    lo, hi = rl.min(axis=0) - 1.0, rl.max(axis=0) + 1.0
+    region = [[lo[0], lo[1]], [hi[0], lo[1]],
+              [hi[0], hi[1]], [lo[0], hi[1]]]
+    cl = np.asarray(fast_centerline(raw, res, origin, closed=True,
+                                    hint_xy=hint, region_xy=region))
+    assert _length(cl) > 0.85 * _length(rl)
+    assert (np.ptp(cl, axis=0) > 0.9 * np.ptp(rl, axis=0)).all()
+    assert (cl >= lo - 0.2).all() and (cl <= hi + 0.2).all()
 
 
 def test_centerline_rejects_empty_region(demo_map):

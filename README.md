@@ -41,14 +41,14 @@ One command starts the backend and opens the browser on it:
 
 ```bash
 # with uv (https://docs.astral.sh/uv/)
-uvx raceline-studio --map maps/demo/map.yaml
+uvx raceline-studio --map maps/icra2026_map/map.yaml
 
 # or from a clone
-uv run raceline-studio --map maps/demo/map.yaml
+uv run raceline-studio --map maps/icra2026_map/map.yaml
 
 # or plain pip
 pip install raceline-studio
-raceline-studio --map maps/demo/map.yaml
+raceline-studio --map maps/icra2026_map/map.yaml
 ```
 
 Flags: `--line <csv>` start line, `--out <csv>` save target (default
@@ -60,7 +60,7 @@ Flags: `--line <csv>` start line, `--out <csv>` save target (default
 ```bash
 docker build -t raceline-studio .
 docker run --rm -p 8754:8754 -v "$PWD/maps:/maps" -v "$PWD/racelines:/racelines" \
-  raceline-studio --map /maps/demo/map.yaml --out /racelines/demo_raceline.csv
+  raceline-studio --map /maps/icra2026_map/map.yaml --out /racelines/icra2026_map_raceline.csv
 # open http://127.0.0.1:8754
 ```
 

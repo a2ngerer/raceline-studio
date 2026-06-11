@@ -15,4 +15,4 @@ RUN uv pip install --system --no-cache .
 
 EXPOSE 8754
 ENTRYPOINT ["raceline-studio", "--host", "0.0.0.0", "--no-browser"]
-CMD ["--map", "/app/maps/demo/map.yaml", "--out", "/racelines/demo_raceline.csv"]
+CMD ["--map", "/app/maps/icra2026_map/map.yaml", "--out", "/racelines/icra2026_map_raceline.csv"]

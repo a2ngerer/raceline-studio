@@ -27,9 +27,23 @@ from .core.reference_line import smooth_and_resample
 from .core.vehicle_params import VehicleParams
 
 MAP_YAML = "/maps/map.yaml"
-RACELINE = "/maps/demo_raceline.csv"
+RACELINE = "/maps/icra2026_map_raceline.csv"
+TRACK = "icra2026_map"
+OUT_NAME = f"{TRACK}_raceline.csv"
 
 STATE: dict = {}
+
+
+def _default_region(line_xy):
+    """Bounding box of the bundled raceline + 1 m margin.
+
+    The competition map's free space extends beyond the course; restricting
+    the centerline to the track area gives the full-loop result out of the
+    box (visitors can CLR RGN to see the unrestricted behaviour)."""
+    a = np.asarray(line_xy, dtype=float)
+    lo, hi = a.min(axis=0) - 1.0, a.max(axis=0) + 1.0
+    return [[float(lo[0]), float(lo[1])], [float(hi[0]), float(lo[1])],
+            [float(hi[0]), float(hi[1])], [float(lo[0]), float(hi[1])]]
 
 
 def studio_init() -> str:
@@ -58,7 +72,7 @@ def studio_init() -> str:
         meta={"origin_x": origin[0], "origin_y": origin[1], "res": res,
               "W": W, "H": H, "R_min": float(R_kin),
               "R_safe": float(1.8 * R_kin), "closed": closed,
-              "track": "demo",
+              "track": TRACK,
               "v_max": float(veh.v_max), "v_min": float(veh.v_min),
               "mu": round(float(veh.a_lat_max) / 9.81, 3),
               "mu_pp": round(8.0 / 9.81, 3),
@@ -73,14 +87,14 @@ def studio_init() -> str:
         certainty={"neutral": 0.5, "zones": []},
         centerline_xy=lines.get("centerline")
         or lines.get("centerline (skeleton)") or lines.get("edited (saved)"),
-        cl_region=None,
+        cl_region=_default_region(saved) if saved is not None else None,
     )
     return json.dumps({
         "meta": STATE["meta"], "map_b64": b64, "lines": lines,
-        "loaded_v": load_v(RACELINE), "out": "demo_raceline.csv",
+        "loaded_v": load_v(RACELINE), "out": OUT_NAME,
         "session": None,
         "upload": {"host": "", "user": "", "port": 22, "dest": ""},
-        "cl_region": None,
+        "cl_region": STATE["cl_region"],
     })
 
 
@@ -171,7 +185,7 @@ def studio_save(body_json: str) -> str:
     lines = {k: val for k, val in STATE["lines"].items()
              if k != "edited (saved)"}
     STATE["lines"] = {"edited (saved)": saved, **lines}
-    return json.dumps({"ok": True, "path": "demo_raceline.csv", "csv": text,
+    return json.dumps({"ok": True, "path": OUT_NAME, "csv": text,
                        "vmin": (min(v) if v else None),
                        "vmax": (max(v) if v else None)})
 

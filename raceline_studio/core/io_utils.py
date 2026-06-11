@@ -88,7 +88,12 @@ def load_centerline_file(map_yaml, closed):
     for name in ("centerline.csv", "centreline.csv"):
         p = os.path.join(d, name)
         if os.path.isfile(p):
-            data = np.loadtxt(p, delimiter=",", comments="#")
+            # Tolerate a plain "x_m,y_m" header row (loadtxt only skips
+            # "#" comments on its own).
+            with open(p) as f:
+                first = f.readline()
+            skip = 1 if any(c.isalpha() for c in first.split(",")[0]) else 0
+            data = np.loadtxt(p, delimiter=",", comments="#", skiprows=skip)
             if data.ndim != 2 or data.shape[1] < 2:
                 continue
             xy = data[:, :2].astype(float)

@@ -38,7 +38,7 @@ async function init() {
   boot("installing raceline core…");
   const manifest = await (await fetch("py/manifest.json")).json();
   for (const f of manifest) await fetchToFS("py/" + f, "/" + f);
-  for (const f of ["map.yaml", "map.png", "demo_raceline.csv",
+  for (const f of ["map.yaml", "map.png", "icra2026_map_raceline.csv",
                    "centerline.csv"]) {
     try { await fetchToFS("maps/" + f, "/maps/" + f); }
     catch { /* optional file */ }

@@ -22,9 +22,9 @@ cp "$ROOT"/raceline_studio/core/*.py "$DIST/py/raceline_studio/core/"
   > manifest.json)
 
 # demo map + start line
-cp "$ROOT"/maps/demo/map.yaml "$ROOT"/maps/demo/map.png \
-   "$ROOT"/maps/demo/demo_raceline.csv "$DIST/maps/"
-[ -f "$ROOT/maps/demo/centerline.csv" ] && \
-  cp "$ROOT/maps/demo/centerline.csv" "$DIST/maps/"
+cp "$ROOT"/maps/icra2026_map/map.yaml "$ROOT"/maps/icra2026_map/map.png \
+   "$ROOT"/maps/icra2026_map/icra2026_map_raceline.csv "$DIST/maps/"
+[ -f "$ROOT/maps/icra2026_map/centerline.csv" ] && \
+  cp "$ROOT/maps/icra2026_map/centerline.csv" "$DIST/maps/"
 
 echo "demo built -> $DIST"
