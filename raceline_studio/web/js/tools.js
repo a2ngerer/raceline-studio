@@ -232,6 +232,16 @@ let drag = null; // {kind, ...}
 let speedRaf = null;
 let lastSpeed = null; // {t, cx, cy}
 
+/* touch: two fingers pinch-zoom + pan the map (mobile) */
+const touchPts = new Map(); // pointerId -> {x, y}
+let pinch = null;           // {dist, mx, my}
+
+function pinchFrom(pts) {
+  const [a, b] = pts;
+  return { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+           mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+}
+
 function pickThresholdWorld() {
   return Math.max(0.12, 10 / view.scale * S.meta.res);
 }
@@ -304,6 +314,18 @@ function onPointerDown(e) {
   try { cv.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
   const [cx, cy] = eventCanvasPos(e);
 
+  if (e.pointerType === "touch") {
+    touchPts.set(e.pointerId, { x: cx, y: cy });
+    if (touchPts.size === 2) {
+      // second finger: stop whatever the first one started, begin pinch
+      drag = null;
+      if (speedRaf) { cancelAnimationFrame(speedRaf); speedRaf = null; }
+      pinch = pinchFrom([...touchPts.values()]);
+      return;
+    }
+    if (touchPts.size > 2) return;
+  }
+
   if (e.button === 2 || e.button === 1) {
     drag = { kind: "pan", x: cx, y: cy };
     return;
@@ -357,6 +379,17 @@ function onPointerMove(e) {
   const [cx, cy] = eventCanvasPos(e);
   setCursor({ x: cx, y: cy });
 
+  if (e.pointerType === "touch" && touchPts.has(e.pointerId)) {
+    touchPts.set(e.pointerId, { x: cx, y: cy });
+    if (pinch && touchPts.size >= 2) {
+      const p = pinchFrom([...touchPts.values()]);
+      zoomAt(p.mx, p.my, p.dist / pinch.dist);
+      panBy(p.mx - pinch.mx, p.my - pinch.my);
+      pinch = p;
+      return;
+    }
+  }
+
   if (drag) {
     if (drag.kind === "pan") {
       panBy(cx - drag.x, cy - drag.y);
@@ -398,6 +431,10 @@ function onPointerMove(e) {
 }
 
 function onPointerUp(e) {
+  if (e.pointerType === "touch") {
+    touchPts.delete(e.pointerId);
+    if (touchPts.size < 2) pinch = null;
+  }
   if (!drag) return;
   const d = drag;
   drag = null;

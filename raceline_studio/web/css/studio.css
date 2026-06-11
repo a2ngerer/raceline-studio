@@ -426,3 +426,38 @@ input[type=range]::-webkit-slider-thumb {
   margin-top: 24px; font-size: 11px; color: var(--ink-3);
   letter-spacing: .16em;
 }
+
+/* ── phones (≤ 720px): presentation-first ───
+   The canvas + telemetry are the show; editing chrome steps back.
+   One finger pans (or drags the line), two fingers pinch-zoom. */
+@media (max-width: 720px) {
+  :root { --bar-h: 50px; --strip-h: 88px; }
+  .line-sel, #fitBtn, .hist, #uploadBtn, .vsep, .ctx { display: none; }
+  #bar { gap: 8px; padding: 0 10px; }
+  .brand-track { display: inline-block; }   /* small + pretty — keep it */
+  .modes button { padding: 7px 8px; font-size: 9.5px; letter-spacing: .06em; }
+  .btn { padding: 8px 10px; font-size: 10px; }
+  .chip { padding: 5px 9px; }
+  .chip-v { font-size: 12px; }
+  #inspector {
+    width: 142px; padding: 10px 12px 8px;
+    right: 10px; top: calc(var(--bar-h) + 10px);
+  }
+  .ins-big { font-size: 22px; }
+  .drawer {
+    top: auto; left: 10px; right: 10px; width: auto;
+    bottom: calc(var(--strip-h) + var(--status-h) + 10px);
+    max-height: 46vh;
+  }
+  .strip-head { padding: 0 10px; }
+  #status { padding: 0 10px; font-size: 9.5px; }
+  #connBanner { max-width: 92vw; text-align: center; }
+  #restoreBanner { left: 10px; right: 10px; transform: none; flex-wrap: wrap; }
+}
+
+@media (max-width: 720px) {
+  /* zone/map editing needs the hidden context tools — drop their tabs */
+  .modes button[data-mode="carpet"],
+  .modes button[data-mode="cert"],
+  .modes button[data-mode="map"] { display: none; }
+}

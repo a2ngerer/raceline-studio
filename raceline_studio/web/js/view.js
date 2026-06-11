@@ -7,7 +7,13 @@ import {
 } from "./geometry.js";
 import { S, bus, setHover } from "./store.js";
 
-const BAR = 56, STRIP = 118, STATUS = 32;
+/* Layout heights come from the CSS variables so media queries (mobile)
+   can reshape the chrome without touching JS. */
+function cssVarPx(name, fallback) {
+  const v = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue(name));
+  return Number.isFinite(v) ? v : fallback;
+}
 
 let cv, ctx, stripCv, stripCtx, stripCursorEl;
 let mapCanvas = null, mapCtx = null;
@@ -68,6 +74,9 @@ export function getMapCtx() { return mapCtx; }
 
 /* ---------- sizing / fit ---------- */
 function resize() {
+  const BAR = cssVarPx("--bar-h", 56);
+  const STRIP = cssVarPx("--strip-h", 118);
+  const STATUS = cssVarPx("--status-h", 32);
   cssW = window.innerWidth;
   cssH = window.innerHeight - BAR - STRIP - STATUS;
   dpr = window.devicePixelRatio || 1;
@@ -86,7 +95,7 @@ function resize() {
 
 export function fit(animated = false) {
   const m = S.meta;
-  const pad = 40;
+  const pad = cssW < 520 ? 14 : 40;  // phones: let the map breathe less
   const s = Math.min((cssW - pad * 2) / m.W, (cssH - pad * 2) / m.H);
   const target = {
     scale: s,
