@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+racelines/
+*_session.json
+*.bak
+demo/dist/
+.playwright-mcp/
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Raceline Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Cpath d='M3 19 C9 19 8 8 14 8 C20 8 19 19 25 19' fill='none' stroke='%2345e3ff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/css/studio.css">
+<script src="/vendor/gsap.min.js"></script>
+</head>
+<body>
+
+<!-- boot overlay -->
+<div id="boot">
+  <div class="boot-mark">
+    <div class="boot-logo"><span>RACELINE</span><b>STUDIO</b></div>
+    <div class="boot-bar"><i id="bootBar"></i></div>
+    <div class="boot-msg" id="bootMsg">loading map…</div>
+  </div>
+</div>
+
+<!-- top command bar -->
+<header id="bar">
+  <div class="brand">
+    <svg class="brand-glyph" viewBox="0 0 28 28" aria-hidden="true">
+      <path d="M3 19 C9 19 8 8 14 8 C20 8 19 19 25 19" fill="none"
+            stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="25" cy="19" r="2.6" fill="currentColor"/>
+    </svg>
+    <div class="brand-name">RACELINE<b>STUDIO</b></div>
+    <div class="brand-track" id="trackName">—</div>
+  </div>
+
+  <div class="vsep"></div>
+
+  <select id="lineSel" class="line-sel" title="Start line"></select>
+  <button class="btn icon" id="fitBtn" title="Fit view (F)">
+    <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"
+      fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+  </button>
+
+  <div class="vsep"></div>
+
+  <nav class="modes" id="modes">
+    <button data-mode="shape"  class="sel" title="Shape (1)">SHAPE</button>
+    <button data-mode="speed"  title="Speed (2)">SPEED</button>
+    <button data-mode="carpet" title="Carpet zones (3)">CARPET</button>
+    <button data-mode="cert"   title="Certainty zones (4)">CERT</button>
+    <button data-mode="map"    title="Map edit + live centerline (5)">MAP</button>
+  </nav>
+
+  <div class="ctx" id="ctx"></div>
+
+  <div class="spacer"></div>
+
+  <div class="hist">
+    <button class="btn icon glyph" id="undoBtn" title="Undo (Cmd/Ctrl+Z)">↶</button>
+    <button class="btn icon glyph" id="redoBtn" title="Redo (Shift+Cmd/Ctrl+Z)">↷</button>
+    <button class="btn icon glyph" id="revertBtn" title="Revert to last saved CSV (undoable)">⟲</button>
+  </div>
+  <div class="vsep"></div>
+
+  <div class="chip lap" id="lapChip" title="Estimated lap time from the current speed profile">
+    <span class="chip-k">EST LAP</span><span class="chip-v" id="lapVal">—</span>
+  </div>
+
+  <button class="btn" id="computeBtn" title="Compute / refresh speed profile (C)">COMPUTE</button>
+  <button class="btn" id="optBtn" title="Optimizer (O)">OPTIMIZE</button>
+  <button class="btn" id="uploadBtn" title="Upload to car (U)">UPLOAD</button>
+  <button class="btn primary" id="saveBtn" title="Save CSV (Cmd/Ctrl+S)">SAVE</button>
+  <button class="btn icon" id="gearBtn" title="Vehicle settings">
+    <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"
+      stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </button>
+</header>
+
+<!-- main canvas -->
+<canvas id="cv"></canvas>
+
+<!-- right column -->
+<aside class="card" id="inspector"></aside>
+<aside class="card" id="legend"></aside>
+
+<!-- telemetry strip -->
+<section id="strip">
+  <div class="strip-head">
+    <span class="strip-title">TELEMETRY</span>
+    <span class="strip-tag tag-v">SPEED</span>
+    <span class="strip-tag tag-r">RADIUS</span>
+    <span class="strip-cursor" id="stripCursor"></span>
+  </div>
+  <canvas id="stripCv"></canvas>
+</section>
+
+<!-- status bar -->
+<footer id="status">
+  <span class="led" id="connLed" title="Backend connection"></span>
+  <span class="st-conn" id="connText">connecting…</span>
+  <span class="st-sep"></span>
+  <span class="st-job" id="jobText"></span>
+  <div class="st-prog" id="jobProg"><i></i></div>
+  <span class="spacer"></span>
+  <span class="st-save" id="autosaveText">autosave ready</span>
+  <span class="st-sep"></span>
+  <span class="st-hint" id="hintText"><b>drag</b> edit · <b>scroll</b> zoom · <b>right-drag</b> pan · <b>F</b> fit · <b>?</b> keys</span>
+</footer>
+
+<!-- drawers -->
+<aside class="drawer" id="settingsDrawer"></aside>
+<aside class="drawer" id="optimizeDrawer"></aside>
+<aside class="drawer" id="uploadDrawer"></aside>
+
+<!-- banners + toast -->
+<div id="connBanner">backend offline — retrying…<span id="connRetry"></span></div>
+<div id="restoreBanner"></div>
+<div id="toast"></div>
+<div id="keysOverlay"></div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
