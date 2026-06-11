@@ -26,6 +26,12 @@ nothing uploaded anywhere.
 - **Optimization** — minimum curvature (linearised IQP against the live
   corridor) and minimum time (curvature/length blend sweep scored by lap
   time), candidates streamed as ghost lines while the job runs.
+- **Vehicle parameters** — width, wheelbase, max steering angle and wall
+  safety margin are editable in the settings drawer. They drive the minimum
+  turn radius (R_min = wheelbase / tan(δ_max)) used by the curvature
+  colouring and telemetry strip, and the optimizer keeps
+  width/2 + margin off every wall. Gaps narrower than the vehicle (cone
+  rows, dotted dividers) are excluded from the drivable corridor.
 - **Zones** — carpet zones (locally stronger grip µ) and certainty zones
   (per-point controller hints) saved as JSON sidecars.
 - **Upload to car** — saves the CSV and `scp`s it (plus sidecars, optionally

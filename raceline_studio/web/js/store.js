@@ -18,6 +18,8 @@ export const S = {
   mapTool: "wall", mapBrushPx: 6, liveCenterline: true,
   clRegion: null,           // world polygon limiting centerline computation
   mu: 0.45, vmax: 7, mupp: 0.82, muCarpet: 0.9, unrestricted: false,
+  // vehicle geometry — drives R_min display and the optimizer wall margin
+  veh: { wheelbase: 0.31, width: 0.296, steerDeg: 24, margin: 0.10 },
   carpet: { mu: 0.9, zones: [] },
   certainty: { neutral: 0.5, zones: [] },
   selZone: null,            // {kind:'carpet'|'cert', idx}
@@ -157,10 +159,25 @@ export function markSaved() {
   bus.emit("autosave", "saved to disk");
 }
 
+/* ---- vehicle geometry: R_min = wheelbase / tan(max steering) ---- */
+export function applyVehGeometry() {
+  const r = S.veh.wheelbase / Math.tan(S.veh.steerDeg * Math.PI / 180);
+  if (S.meta) {
+    S.meta.R_min = r;
+    S.meta.R_safe = 1.8 * r;
+  }
+  recomputeRadii();
+  bus.emit("settings");
+  return r;
+}
+
 /* ---- settings payload shared by /save, /feasible, /upload ---- */
 export function physPayload() {
   return {
     mu: S.mu, v_max: S.vmax, unrestricted: S.unrestricted,
+    wheelbase: S.veh.wheelbase, width: S.veh.width,
+    max_steering: S.veh.steerDeg * Math.PI / 180,
+    safety_margin: S.veh.margin,
     carpet: { mu: S.muCarpet, zones: S.carpet.zones },
   };
 }
@@ -183,6 +200,7 @@ export function serializeSession() {
     pts: S.pts, v: S.V, v_targets: S.vT, vStale: S.vStale, dirty: S.dirty,
     settings: { mu: S.mu, v_max: S.vmax, mu_pp: S.mupp,
                 mu_carpet: S.muCarpet, unrestricted: S.unrestricted },
+    veh: { ...S.veh },
     carpet: S.carpet, certainty: S.certainty,
     upload: S.upload, mode: S.mode, cl_region: S.clRegion, ts: Date.now(),
   };
@@ -206,6 +224,10 @@ export function applySession(sess) {
   if (sess.carpet && Array.isArray(sess.carpet.zones)) S.carpet = sess.carpet;
   if (sess.certainty && Array.isArray(sess.certainty.zones)) {
     S.certainty = sess.certainty;
+  }
+  if (sess.veh && isFinite(sess.veh.wheelbase)) {
+    S.veh = { ...S.veh, ...sess.veh };
+    applyVehGeometry();
   }
   if (sess.upload) S.upload = { ...S.upload, ...sess.upload };
   if ("cl_region" in sess) {
@@ -278,6 +300,12 @@ export function initStore(d) {
   S.lines = d.lines || {};
   S.mu = d.meta.mu; S.vmax = d.meta.v_max; S.mupp = d.meta.mu_pp;
   S.muCarpet = d.meta.mu_carpet ?? 0.9;
+  S.veh = {
+    wheelbase: d.meta.wheelbase ?? 0.31,
+    width: d.meta.width ?? 0.296,
+    steerDeg: (d.meta.max_steering ?? 0.4189) * 180 / Math.PI,
+    margin: d.meta.safety_margin ?? 0.10,
+  };
   S.carpet = { mu: S.muCarpet, zones: d.meta.carpet_zones || [] };
   S.certainty = { neutral: d.meta.cert_neutral ?? 0.5,
                   zones: d.meta.certainty_zones || [] };

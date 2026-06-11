@@ -73,6 +73,10 @@ def studio_init() -> str:
               "W": W, "H": H, "R_min": float(R_kin),
               "R_safe": float(1.8 * R_kin), "closed": closed,
               "track": TRACK,
+              "wheelbase": float(veh.wheelbase),
+              "width": float(veh.width),
+              "max_steering": float(veh.max_steering),
+              "safety_margin": float(veh.safety_margin),
               "v_max": float(veh.v_max), "v_min": float(veh.v_min),
               "mu": round(float(veh.a_lat_max) / 9.81, 3),
               "mu_pp": round(8.0 / 9.81, 3),
@@ -99,12 +103,18 @@ def studio_init() -> str:
 
 
 def _vehicle_params(body) -> VehicleParams:
+    """UI overrides on top of the defaults: grip/speed plus the geometry
+    (wheelbase, width, max steering, safety margin) that drives R_min and
+    the optimizer's wall clearance."""
     veh = STATE["veh"]
     mu = float(body.get("mu", STATE["meta"]["mu"]))
     v_max = float(body.get("v_max", STATE["meta"]["v_max"]))
     a = mu * 9.81
+    geo = {k: float(body[k])
+           for k in ("wheelbase", "width", "max_steering", "safety_margin")
+           if body.get(k) is not None}
     return dataclasses.replace(veh, a_lat_max=a, a_long_max=a,
-                               a_brake_max=a, v_max=v_max)
+                               a_brake_max=a, v_max=v_max, **geo)
 
 
 def _grip_scale(body, pts):
@@ -201,11 +211,18 @@ def studio_centerline(body_json: str, progress=None) -> str:
         if progress is not None:
             progress(float(p), str(msg))
 
+    # Vehicle-scale wall inflation: gaps narrower than the car (cone rows,
+    # dotted dividers) must not count as drivable corridor.
+    veh = _vehicle_params(body)
+    res = STATE["yaml_meta"]["res"]
+    inflate = max(0, int((0.5 * veh.width + veh.safety_margin) / res))
+
     t0 = time.time()
-    ref = fast_centerline(STATE["raw"], STATE["yaml_meta"]["res"],
+    ref = fast_centerline(STATE["raw"], res,
                           STATE["yaml_meta"]["origin"], STATE["closed"],
                           hint_xy=STATE.get("centerline_xy"),
-                          region_xy=STATE.get("cl_region"), progress=prog)
+                          region_xy=STATE.get("cl_region"),
+                          inflate_px=inflate, progress=prog)
     pts = ref.tolist()
     STATE["centerline_xy"] = pts
     STATE["lines"]["centerline (live)"] = pts
@@ -229,10 +246,11 @@ def studio_optimize(body_json: str, progress=None, preview=None) -> str:
         if preview is not None:
             preview(json.dumps(d))
 
+    veh_ui = _vehicle_params(body)
     result = run_optimization(
         method, STATE["raw"], STATE["yaml_meta"]["res"],
         STATE["yaml_meta"]["origin"], STATE["closed"], cline,
-        STATE["veh"], _vehicle_params(body),
+        veh_ui, veh_ui,
         grip_scale_fn=lambda pts: _grip_scale(body, pts),
         region_xy=STATE.get("cl_region"),
         on_progress=on_progress, on_preview=on_preview)

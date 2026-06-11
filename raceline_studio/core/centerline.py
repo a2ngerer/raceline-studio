@@ -118,6 +118,32 @@ def _best_walk(skel: np.ndarray, seed_rc) -> np.ndarray:
     return best
 
 
+def _order_by_hint(skel, hint_xy, origin, res, band_m=1.0):
+    """Order the skeleton along an existing centerline hint.
+
+    For every hint point take the nearest skeleton pixel within ``band_m``.
+    The result inherits the hint's loop ordering, so it cannot dead-end in
+    a residual branch or close the loop with a chord across the map — the
+    failure modes of the greedy pixel walk on maps whose free space is
+    larger than the course. Returns None when the hint barely overlaps the
+    skeleton (e.g. the map was repainted far away from it)."""
+    from scipy.spatial import cKDTree
+
+    sk_rc = np.argwhere(skel)
+    if sk_rc.shape[0] < 8:
+        return None
+    sk_xy = pixels_to_world(sk_rc, origin, res)
+    dist, idx = cKDTree(sk_xy).query(np.asarray(hint_xy, dtype=float))
+    keep = dist <= band_m
+    if keep.sum() < max(8, 0.5 * len(hint_xy)):
+        return None
+    sel = idx[keep]
+    # consecutive hint points often snap to the same pixel — deduplicate
+    step = np.ones(sel.shape[0], dtype=bool)
+    step[1:] = sel[1:] != sel[:-1]
+    return sk_xy[sel[step]]
+
+
 def region_mask_from_polygon(region_xy, shape, origin, res):
     """Rasterize a world-coordinate polygon to a pixel mask (None = no-op)."""
     if not region_xy or len(region_xy) < 3:
@@ -127,12 +153,17 @@ def region_mask_from_polygon(region_xy, shape, origin, res):
 
 
 def fast_centerline(raw: np.ndarray, res: float, origin, closed: bool,
-                    hint_xy=None, region_xy=None, cancel=None,
-                    progress=None) -> np.ndarray:
+                    hint_xy=None, region_xy=None, inflate_px: int = 0,
+                    cancel=None, progress=None) -> np.ndarray:
     """Centerline from the occupancy grid.
 
     ``region_xy`` (world-coordinate polygon) restricts the computation to
     the drawn area — free space outside it is treated as wall.
+
+    ``inflate_px`` erodes the free space by the vehicle's half width +
+    safety margin (in pixels). Gaps narrower than the vehicle — e.g. the
+    space between cones in a dotted track divider — stop counting as
+    drivable, so the corridor cannot leak through them.
     """
     def tick(p, msg):
         _check_cancel(cancel)
@@ -146,6 +177,10 @@ def fast_centerline(raw: np.ndarray, res: float, origin, closed: bool,
         free = free & rmask
         if not free.any():
             raise RuntimeError("no free space inside the region polygon")
+    if inflate_px > 0:
+        inflated = binary_erosion(free, iterations=int(inflate_px))
+        if inflated.any():
+            free = inflated  # too-narrow maps: fall back rather than fail
     if not free.any():
         raise RuntimeError("map has no free space")
 
@@ -192,12 +227,16 @@ def fast_centerline(raw: np.ndarray, res: float, origin, closed: bool,
         raise RuntimeError("skeleton empty — track too thin or map degenerate")
 
     tick(0.8, "order loop")
-    seed_s = (seed[0] // scale, seed[1] // scale)
-    rc = _best_walk(skel, seed_s)
-    if rc.shape[0] < 8:
-        raise RuntimeError("centerline too short — check the map walls")
-    if scale == 2:
-        rc = rc * 2
-    xy = pixels_to_world(rc, origin, res)
+    xy = None
+    if hint_xy is not None and len(hint_xy) >= 8:
+        xy = _order_by_hint(skel, hint_xy, origin, res * scale)
+    if xy is None:
+        # No usable hint: greedy walk over the largest skeleton cycle.
+        skel = _largest_component(skel)
+        seed_s = (seed[0] // scale, seed[1] // scale)
+        rc = _best_walk(skel, seed_s)
+        if rc.shape[0] < 8:
+            raise RuntimeError("centerline too short — check the map walls")
+        xy = pixels_to_world(rc, origin, res * scale)
     tick(0.92, "resample")
     return smooth_and_resample(xy, closed=closed, spacing=0.10, smoothing=0.5)

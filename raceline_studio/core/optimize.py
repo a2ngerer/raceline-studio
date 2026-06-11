@@ -10,12 +10,17 @@ browser (Pyodide) build both wrap :func:`run_optimization`.
 from __future__ import annotations
 
 import numpy as np
+from scipy.ndimage import (
+    binary_erosion, distance_transform_edt, minimum_filter1d,
+    uniform_filter1d,
+)
 from scipy.optimize import lsq_linear
 
 from .centerline import JobCancelled, region_mask_from_polygon
 from .io_utils import _ds_closed
 from .map_processing import (
-    corridor_halfwidths, corridor_mask_from_centerline, world_to_pixels,
+    corridor_halfwidths, corridor_mask_from_centerline, pixels_to_world,
+    world_to_pixels,
 )
 from .min_curvature_opt import _second_difference_matrix
 from .reference_line import (
@@ -67,16 +72,70 @@ def solve_blend(ref: np.ndarray, nvec: np.ndarray, bounds, closed: bool,
     return np.asarray(res.x, dtype=float)
 
 
+def _drivable_snapper(drivable, origin, res, margin):
+    """Return a function pulling off-corridor points back into the corridor.
+
+    The spline resample between IQP iterations can cut a hairpin corner
+    through a thin interior wall; once a point sits on a wall the normal
+    cast collapses to zero bounds and the line never recovers. Off-corridor
+    points snap to the nearest pixel of the margin-eroded corridor core —
+    landing a proper wall clearance away, not hugging the wall — with the
+    plain corridor as fallback where the core is locally out of reach
+    (genuine pinch narrower than the vehicle)."""
+    depth = distance_transform_edt(drivable)
+    core = drivable & (depth >= max(1.0, margin / res))
+    if not core.any():
+        core = drivable
+    dist_core, ind_core = distance_transform_edt(~core, return_indices=True)
+    _, ind_any = distance_transform_edt(~drivable, return_indices=True)
+    core_reach = 2.0 * margin / res + 4.0
+
+    def snap(pts):
+        rc = world_to_pixels(pts, origin, res)
+        h, w = drivable.shape
+        rc[:, 0] = np.clip(rc[:, 0], 0, h - 1)
+        rc[:, 1] = np.clip(rc[:, 1], 0, w - 1)
+        bad = ~drivable[rc[:, 0], rc[:, 1]]
+        if not bad.any():
+            return pts
+        use_core = bad & (dist_core[rc[:, 0], rc[:, 1]] <= core_reach)
+        pts = pts.copy()
+        for mask, ind in ((use_core, ind_core), (bad & ~use_core, ind_any)):
+            if mask.any():
+                nearest = np.stack([ind[0][rc[mask, 0], rc[mask, 1]],
+                                    ind[1][rc[mask, 0], rc[mask, 1]]], axis=1)
+                pts[mask] = pixels_to_world(nearest, origin, res)
+        return pts
+
+    return snap
+
+
 def optimize_line(ref, drivable, origin, res, veh, closed, w_len=0.0,
-                  iters=4, spacing=0.10, cancel=None, progress=None):
-    """Blend-IQP against the live corridor (asymmetric normal-cast bounds)."""
+                  iters=4, spacing=0.10, cancel=None, progress=None,
+                  margin=None):
+    """Blend-IQP against the live corridor (asymmetric normal-cast bounds).
+
+    ``margin=None`` derives the wall margin from the vehicle; pass an
+    explicit (smaller) value when the margin is already baked into the
+    ``drivable`` mask via erosion."""
     pts = np.asarray(ref, dtype=float)
-    margin = max(0.0, 0.5 * veh.width + veh.safety_margin)
+    if margin is None:
+        margin = max(0.0, 0.5 * veh.width + veh.safety_margin)
+    snap = _drivable_snapper(drivable, origin, res, margin)
     for it in range(max(1, iters)):
         if cancel is not None and cancel.is_set():
             raise JobCancelled
         _, nvec = heading_and_normals(pts, closed)
         left, right = corridor_halfwidths(drivable, pts, nvec, origin, res)
+        # The per-point pixel cast is noisy on narrow corridors and the IQP
+        # solution inherits that noise as a jagged line. Smooth the widths
+        # along the line — conservatively: a min filter first (never widen a
+        # narrow spot), then a short mean.
+        mode = "wrap" if closed else "nearest"
+        left = uniform_filter1d(
+            minimum_filter1d(left, 3, mode=mode), 5, mode=mode)
+        right = uniform_filter1d(
+            minimum_filter1d(right, 3, mode=mode), 5, mode=mode)
         a_hi = left - margin
         a_lo = -(right - margin)
         cross = a_lo > a_hi
@@ -85,8 +144,8 @@ def optimize_line(ref, drivable, origin, res, veh, closed, w_len=0.0,
         a_lo = np.where(cross, mid, a_lo)
         alpha = solve_blend(pts, nvec, (a_lo, a_hi), closed, w_len)
         pts = pts + alpha[:, np.newaxis] * nvec
-        pts = smooth_and_resample(pts, closed=closed, spacing=spacing,
-                                  smoothing=0.1)
+        pts = snap(smooth_and_resample(pts, closed=closed, spacing=spacing,
+                                       smoothing=0.1))
         if progress is not None:
             progress(it + 1, pts)
     return pts
@@ -131,6 +190,19 @@ def run_optimization(method, raw, res, origin, closed, cline_xy,
     rmask = region_mask_from_polygon(region_xy, free.shape, origin, res)
     if rmask is not None:
         free = free & rmask  # optimizer respects the centerline region too
+    # Bake most of the vehicle margin into the corridor mask itself: erode
+    # the free space by the half width + safety margin before flooding.
+    # This (a) closes gaps narrower than the vehicle (cone rows, dotted
+    # dividers) so neither the flood nor the normal cast can leak through,
+    # and (b) prevents the cast from jumping hairline diagonal walls.
+    margin = max(0.0, 0.5 * veh_geo.width + veh_geo.safety_margin)
+    margin_px = max(1, int(margin / res))
+    eroded = binary_erosion(free, iterations=margin_px)
+    if eroded.any():
+        free = eroded
+        margin_resid = max(0.0, margin - margin_px * res)
+    else:
+        margin_resid = margin  # ultra-narrow map: keep the soft margin only
     drivable = corridor_mask_from_centerline(free, cline_rc[ib])
     ref = smooth_and_resample(cline_xy[ib], closed=closed, spacing=0.10,
                               smoothing=0.5)
@@ -150,7 +222,7 @@ def run_optimization(method, raw, res, origin, closed, cline_xy,
             preview({"pts": np.asarray(pts).tolist()})
 
         opt = optimize_line(ref, drivable, origin, res, veh_geo, closed,
-                            w_len=0.0, iters=total_iters,
+                            w_len=0.0, iters=total_iters, margin=margin_resid,
                             cancel=cancel, progress=it_prog)
         v, t = score(opt)
         return {"method": "mincurv", "pts": opt.tolist(),
@@ -166,7 +238,7 @@ def run_optimization(method, raw, res, origin, closed, cline_xy,
         # Coarser search pass keeps the sweep interactive; winner is refined.
         opt = optimize_line(ref, drivable, origin, res, veh_geo, closed,
                             w_len=w_len, iters=3, spacing=0.15,
-                            cancel=cancel)
+                            margin=margin_resid, cancel=cancel)
         v, t = score(opt)
         candidates.append((t, w_len))
         preview({"pts": opt.tolist(), "lap_time": round(t, 3),
@@ -174,7 +246,8 @@ def run_optimization(method, raw, res, origin, closed, cline_xy,
     best_t, best_w = min(candidates)
     prog(nW / (nW + 1), f"min time — refining winner (w={best_w:g})")
     opt = optimize_line(ref, drivable, origin, res, veh_geo, closed,
-                        w_len=best_w, iters=5, spacing=0.10, cancel=cancel)
+                        w_len=best_w, iters=5, spacing=0.10,
+                        margin=margin_resid, cancel=cancel)
     v, t = score(opt)
     return {"method": "mintime", "pts": opt.tolist(),
             "v": [float(x) for x in v], "lap_time": round(t, 3),

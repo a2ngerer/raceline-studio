@@ -335,6 +335,10 @@ def build_state(args) -> None:
                   "W": W, "H": H, "R_min": float(R_kin),
                   "R_safe": float(1.8 * R_kin), "closed": closed,
                   "track": map_name_from_path(args.map),
+                  "wheelbase": float(veh.wheelbase),
+                  "width": float(veh.width),
+                  "max_steering": float(veh.max_steering),
+                  "safety_margin": float(veh.safety_margin),
                   "v_max": float(veh.v_max), "v_min": float(veh.v_min),
                   "mu": round(float(veh.a_lat_max) / 9.81, 3),
                   "mu_pp": round(float(a_lat_ppcap) / 9.81, 3),
@@ -363,12 +367,18 @@ def build_state(args) -> None:
 
 
 def _vehicle_params(body) -> VehicleParams:
+    """UI overrides on top of the defaults: grip/speed plus the geometry
+    (wheelbase, width, max steering, safety margin) that drives R_min and
+    the optimizer's wall clearance."""
     veh = _STATE["veh"]
     mu = float(body.get("mu", _STATE["meta"]["mu"]))
     v_max = float(body.get("v_max", _STATE["meta"]["v_max"]))
     a = mu * 9.81
+    geo = {k: float(body[k])
+           for k in ("wheelbase", "width", "max_steering", "safety_margin")
+           if body.get(k) is not None}
     return dataclasses.replace(veh, a_lat_max=a, a_long_max=a,
-                               a_brake_max=a, v_max=v_max)
+                               a_brake_max=a, v_max=v_max, **geo)
 
 
 def _grip_scale(body, pts):
@@ -410,9 +420,14 @@ def run_centerline_job(job: dict, body: dict) -> None:
         job["message"] = msg
         _job_event(job)
 
+    # Vehicle-scale wall inflation: gaps narrower than the car (cone rows,
+    # dotted dividers) must not count as drivable corridor.
+    veh = _vehicle_params(body)
+    inflate = max(0, int((0.5 * veh.width + veh.safety_margin) / ym["res"]))
+
     t0 = time.time()
     ref = fast_centerline(raw, ym["res"], ym["origin"], closed,
-                          hint_xy=hint, region_xy=region,
+                          hint_xy=hint, region_xy=region, inflate_px=inflate,
                           cancel=job["cancel"], progress=prog)
     pts = ref.tolist()
     with _STATE_LOCK:
@@ -434,8 +449,10 @@ def run_optimize_job(job: dict, body: dict) -> None:
         closed = _STATE["closed"]
         cline = body.get("centerline") or _STATE.get("centerline_xy")
         region = _STATE.get("cl_region")
-    veh_ui = _vehicle_params(body)   # UI grip/speed for the lap-time score
-    veh_geo = _STATE["veh"]          # geometry (width/margin) for the bounds
+    # One params object carries both: grip/speed for the lap-time score and
+    # the user-set geometry (width/margin/steering) for the corridor bounds.
+    veh_ui = _vehicle_params(body)
+    veh_geo = veh_ui
 
     def on_progress(frac, msg):
         job["progress"] = frac

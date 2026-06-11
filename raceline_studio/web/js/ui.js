@@ -5,9 +5,9 @@
 import { api, connectSSE, onConn } from "./api.js";
 import { COL, fmt } from "./geometry.js";
 import {
-  S, bus, clearLocal, clonePts, historySizes, lapEstimate, loadLocal,
-  markDirty, markSaved, applySession, pushHistory, redo, savePayload,
-  setGhost, setMode, setProfile, setPts, undo,
+  S, applyVehGeometry, bus, clearLocal, clonePts, historySizes, lapEstimate,
+  loadLocal, markDirty, markSaved, applySession, pushHistory, redo,
+  savePayload, setGhost, setMode, setProfile, setPts, undo,
 } from "./store.js";
 import {
   applyOptimize, cancelDraft, clearRegion, clearZones, computeProfile,
@@ -411,7 +411,17 @@ function buildSettingsDrawer() {
       ${S.unrestricted ? "checked" : ""}> Unrestricted lateral (expert)</label>
     <div class="d-note">a = µ·g feeds the velocity profile. The PP cap is
     display-only: it marks where the car clips speed at runtime. Carpet µ
-    applies inside carpet zones only.</div>`;
+    applies inside carpet zones only.</div>
+    <h3 class="d-sub">VEHICLE GEOMETRY</h3>
+    <div class="d-field"><label><span>Width</span><b id="vWVal">${fmt(S.veh.width, 3)} m</b></label>
+      <input type="range" id="vWSld" min="0.15" max="0.50" step="0.005" value="${S.veh.width}"></div>
+    <div class="d-field"><label><span>Wheelbase</span><b id="vLVal">${fmt(S.veh.wheelbase, 3)} m</b></label>
+      <input type="range" id="vLSld" min="0.20" max="0.60" step="0.005" value="${S.veh.wheelbase}"></div>
+    <div class="d-field"><label><span>Max steering</span><b id="vSVal">${fmt(S.veh.steerDeg, 1)}°</b></label>
+      <input type="range" id="vSSld" min="10" max="45" step="0.5" value="${S.veh.steerDeg}"></div>
+    <div class="d-field"><label><span>Wall safety margin</span><b id="vMVal">${fmt(S.veh.margin, 3)} m</b></label>
+      <input type="range" id="vMSld" min="0" max="0.30" step="0.005" value="${S.veh.margin}"></div>
+    <div class="d-note" id="rminNote"></div>`;
   d.querySelector("[data-x]").onclick = () => closeDrawers();
   const wire = (sld, val, fmt2, set) => {
     $(sld).addEventListener("input", (e) => {
@@ -433,6 +443,34 @@ function buildSettingsDrawer() {
     S.unrestricted = e.target.checked;
     markDirty(); runFeasible(150);
   });
+
+  // Geometry: feeds R_min (curvature colouring, telemetry strip, inspector)
+  // and the optimizer's corridor bounds (width/2 + margin off every wall).
+  const rminNote = () => {
+    const r = S.veh.wheelbase / Math.tan(S.veh.steerDeg * Math.PI / 180);
+    $("rminNote").innerHTML =
+      `R<sub>min</sub> = wheelbase / tan(δ<sub>max</sub>) =
+      <b>${fmt(r, 2)} m</b>. Curvature colouring and the telemetry strip
+      follow it live; the optimizer keeps width/2 + margin =
+      <b>${fmt(S.veh.width / 2 + S.veh.margin, 2)} m</b> off every wall on
+      the next RUN.`;
+  };
+  rminNote();
+  const wireGeo = (sld, val, fmt2, set) => {
+    $(sld).addEventListener("input", (e) => {
+      const v = +e.target.value;
+      $(val).textContent = fmt2(v);
+      set(v);
+      applyVehGeometry();   // emits "settings" -> canvas/strip/inspector
+      S.sessionDirty = true;
+      rminNote();
+    });
+  };
+  wireGeo("vWSld", "vWVal", (v) => fmt(v, 3) + " m", (v) => S.veh.width = v);
+  wireGeo("vLSld", "vLVal", (v) => fmt(v, 3) + " m",
+    (v) => S.veh.wheelbase = v);
+  wireGeo("vSSld", "vSVal", (v) => fmt(v, 1) + "°", (v) => S.veh.steerDeg = v);
+  wireGeo("vMSld", "vMVal", (v) => fmt(v, 3) + " m", (v) => S.veh.margin = v);
 }
 
 let optMethod = "mincurv";

@@ -403,3 +403,26 @@ input[type=range]::-webkit-slider-thumb {
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
 ::selection { background: var(--acc-dim); }
+
+/* ── narrow viewports / iframe embeds ───
+   The top bar holds ~1700px of controls; below that, decorative items go
+   and the bar scrolls horizontally instead of clipping buttons. */
+@media (max-width: 1500px) {
+  .brand-track { display: none; }
+}
+@media (max-width: 1280px) {
+  .st-hint { display: none; }
+  .brand-name { display: none; }
+  #bar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  #bar::-webkit-scrollbar { display: none; }
+  #bar > * { flex-shrink: 0; }
+}
+@media (max-width: 980px) {
+  #legend { display: none; }
+}
+
+/* drawer sub-section heading (vehicle geometry) */
+.drawer h3.d-sub {
+  margin-top: 24px; font-size: 11px; color: var(--ink-3);
+  letter-spacing: .16em;
+}
