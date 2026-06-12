@@ -13,8 +13,8 @@ import {
 } from "./store.js";
 import {
   brushPxRadius, canvasToImg, canvasToWorld, eventCanvasPos, getMapCanvas,
-  getMapCtx, mapPng, panBy, requestRender, setCursor, view, zoneHandles,
-  zoomAt,
+  getMapCtx, mapPng, panBy, requestRender, setCursor, showDirectionPulse,
+  view, zoneHandles, zoomAt,
 } from "./view.js";
 
 let toast = (m) => console.log("[toast]", m);
@@ -44,6 +44,22 @@ export function smoothLine() {
   pushHistory();
   setPts(laplacian(S.pts, S.meta.closed, 0.35));
   toast("Smoothed");
+}
+
+export function reverseDirection() {
+  const n = S.pts.length;
+  if (n < 3) return;
+  pushHistory();
+  // Keep the start point in place, walk the loop the other way round.
+  const flip = (a) => [a[0], ...a.slice(1).reverse()];
+  if (S.vT && S.vT.length === n) S.vT = flip(S.vT);
+  if (S.V && S.V.length === n) S.V = flip(S.V);
+  // setPts marks the profile stale — correct: braking/accel zones are
+  // direction-dependent, the flipped speeds are only a preview.
+  setPts(flip(S.pts));
+  bus.emit("V");
+  showDirectionPulse();
+  toast("Direction reversed — watch the dots");
 }
 
 let feasTimer = null;

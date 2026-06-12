@@ -100,6 +100,21 @@ body::after {
   background: linear-gradient(180deg, rgba(22,27,32,.96), rgba(15,18,22,.92));
   backdrop-filter: blur(18px) saturate(140%);
   border-bottom: 1px solid var(--hair);
+  /* the control set can outgrow the window (esp. MAP-mode tools) — scroll
+     sideways instead of clipping the right-hand buttons off screen */
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+#bar::-webkit-scrollbar { display: none; }
+#bar > * { flex-shrink: 0; }
+/* primary actions stay pinned to the right edge while the rest of the
+   bar scrolls underneath them */
+.bar-actions {
+  display: flex; align-items: center; gap: 10px;
+  position: sticky; right: 0; margin-left: auto;
+  padding: 10px 0 10px 22px; margin-right: -14px;
+  padding-right: 14px;
+  background: linear-gradient(90deg, transparent,
+    rgba(17, 21, 25, .96) 18px);
 }
 #bar::after { /* accent racing stripe */
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
@@ -400,6 +415,67 @@ input[type=range]::-webkit-slider-thumb {
   border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px;
 }
 
+/* inline "what is this?" buttons (inspector headers, drawer titles) */
+.info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; margin-left: 7px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--hair-2);
+  background: none; color: var(--ink-2); cursor: pointer;
+  font: italic 700 9.5px Georgia, "Times New Roman", serif;
+  vertical-align: 1px; flex: 0 0 auto;
+}
+.info:hover { color: var(--acc); border-color: var(--acc); }
+.drawer h3 .info { margin-left: 8px; }
+
+/* help overlay */
+#helpOverlay {
+  position: fixed; inset: 0; z-index: 80; display: none;
+  background: rgba(5,6,8,.72); backdrop-filter: blur(8px);
+  align-items: center; justify-content: center;
+}
+#helpOverlay.on { display: flex; }
+.help-card {
+  position: relative; background: var(--panel-2);
+  border: 1px solid var(--hair-2); border-radius: 14px;
+  padding: 26px 30px; width: 680px; max-width: 92vw;
+  max-height: 84vh; overflow-y: auto;
+  box-shadow: 0 40px 120px -30px rgba(0,0,0,.9);
+}
+.help-card h2 {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; letter-spacing: .22em; color: var(--acc);
+  margin-bottom: 14px;
+}
+.help-card h2 .x { cursor: pointer; color: var(--ink-2); font-size: 13px; letter-spacing: 0; }
+.help-card h2 .x:hover { color: var(--ink); }
+.help-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.help-nav button {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
+  color: var(--ink-2); background: rgba(255,255,255,.05);
+  border: 1px solid var(--hair); border-radius: 6px;
+  padding: 4px 8px; cursor: pointer;
+}
+.help-nav button:hover { color: var(--acc); border-color: var(--acc); }
+.help-sec {
+  padding: 12px 14px; margin: 0 -14px;
+  border-radius: 10px; border: 1px solid transparent;
+}
+.help-sec.hl { border-color: var(--acc); background: var(--acc-dim); }
+.help-sec h3 {
+  font-size: 10.5px; letter-spacing: .14em; color: var(--ink);
+  margin-bottom: 8px;
+}
+.help-sec p {
+  font-size: 11.5px; line-height: 1.65; color: var(--ink-2);
+  margin-bottom: 8px;
+}
+.help-sec p:last-child { margin-bottom: 0; }
+.help-sec b { color: var(--ink); }
+.help-sec code {
+  font-family: var(--mono); font-size: 10px; color: var(--acc);
+  background: rgba(255,255,255,.05); border-radius: 4px; padding: 1px 4px;
+}
+
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
 ::selection { background: var(--acc-dim); }
@@ -407,15 +483,12 @@ input[type=range]::-webkit-slider-thumb {
 /* ── narrow viewports / iframe embeds ───
    The top bar holds ~1700px of controls; below that, decorative items go
    and the bar scrolls horizontally instead of clipping buttons. */
-@media (max-width: 1500px) {
+@media (max-width: 1600px) {
   .brand-track { display: none; }
 }
 @media (max-width: 1280px) {
   .st-hint { display: none; }
   .brand-name { display: none; }
-  #bar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-  #bar::-webkit-scrollbar { display: none; }
-  #bar > * { flex-shrink: 0; }
 }
 @media (max-width: 980px) {
   #legend { display: none; }
@@ -434,6 +507,12 @@ input[type=range]::-webkit-slider-thumb {
   :root { --bar-h: 50px; --strip-h: 88px; }
   .line-sel, #fitBtn, .hist, #uploadBtn, .vsep, .ctx { display: none; }
   #bar { gap: 8px; padding: 0 10px; }
+  /* phones: the pinned action group would cover the mode tabs — let it
+     scroll with the rest of the bar instead */
+  .bar-actions {
+    position: static; padding: 0; margin-right: 0;
+    background: none; gap: 8px;
+  }
   .brand-track { display: inline-block; }   /* small + pretty — keep it */
   .modes button { padding: 7px 8px; font-size: 9.5px; letter-spacing: .06em; }
   .btn { padding: 8px 10px; font-size: 10px; }
@@ -453,6 +532,8 @@ input[type=range]::-webkit-slider-thumb {
   #status { padding: 0 10px; font-size: 9.5px; }
   #connBanner { max-width: 92vw; text-align: center; }
   #restoreBanner { left: 10px; right: 10px; transform: none; flex-wrap: wrap; }
+  .help-card { padding: 18px 16px; max-height: 88vh; }
+  .help-sec { margin: 0; padding: 10px 8px; }
 }
 
 @media (max-width: 720px) {

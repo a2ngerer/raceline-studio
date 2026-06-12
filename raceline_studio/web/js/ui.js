@@ -11,8 +11,8 @@ import {
 } from "./store.js";
 import {
   applyOptimize, cancelDraft, clearRegion, clearZones, computeProfile,
-  deleteZone, finishDraft, runCenterlineNow, runFeasible, runOptimize,
-  scheduleCenterline, setToast, smoothLine,
+  deleteZone, finishDraft, reverseDirection, runCenterlineNow, runFeasible,
+  runOptimize, scheduleCenterline, setToast, smoothLine,
 } from "./tools.js";
 import { fit, mapPng, renderStrip, requestRender } from "./view.js";
 
@@ -73,7 +73,10 @@ function buildCtx() {
   if (S.mode === "shape") {
     const sm = el("button", "btn small", "SMOOTH");
     sm.onclick = smoothLine;
-    c.append(sm, brushSlider(1, 40, () => S.brush, (v) => S.brush = v));
+    const rev = el("button", "btn small", "&#8644; REVERSE");
+    rev.title = "Flip the driving direction (D) — dots show the new direction";
+    rev.onclick = reverseDirection;
+    c.append(sm, rev, brushSlider(1, 40, () => S.brush, (v) => S.brush = v));
   } else if (S.mode === "speed") {
     const seg = el("div", "seg");
     for (const [dir, name] of [[1, "BOOST"], [-1, "REDUCE"]]) {
@@ -170,7 +173,7 @@ function buildLegend() {
   } else if (S.mode === "speed") {
     rows = [
       [sw(COL.ok), "slow"], [sw("#ffe14d"), "medium"], [sw(COL.bad), "fast"],
-      [ring(COL.warn), "over grip µ"], [ring(COL.bad), "over PP cap"],
+      [ring(COL.warn), "over grip µ"],
     ];
   } else if (S.mode === "carpet") {
     rows = [[dot("rgba(143,123,255,.7)"), "carpet zone (stronger µ)"],
@@ -203,7 +206,6 @@ function buildInspector() {
       <div class="ins-big"><span id="insVcur">—</span><span class="u">m/s</span></div>
       <div class="ins-row"><span>range</span><b id="insVrng">—</b></div>
       <div class="ins-row"><span>over grip</span><b id="insOg">0</b></div>
-      <div class="ins-row"><span>over PP cap</span><b id="insOp">0</b></div>
       <div class="ins-row"><span>est. lap</span><b id="insLap">—</b></div>`;
   } else if (S.mode === "carpet") {
     I.innerHTML = `
@@ -218,6 +220,9 @@ function buildInspector() {
       <div class="ins-k">CERTAINTY</div>
       <div id="certZoneBox"></div>`;
   }
+  // every mode header gets a "what is this?" jump into the help overlay
+  const head = I.querySelector(".ins-k");
+  if (head) head.appendChild(infoBtn(S.mode));
   updateInspector();
 }
 
@@ -226,7 +231,10 @@ function updateInspector() {
   if (!m) return;
   if (S.mode === "shape" || S.mode === "map") {
     let minR = Infinity, bad = 0;
-    for (const r of S.radii) { if (r < minR) minR = r; if (r < m.R_min) bad++; }
+    for (const r of S.radii) {
+      if (r < minR) minR = r;
+      if (r < m.R_min) bad++;
+    }
     const len = (() => {
       let L = 0;
       for (let i = 1; i < S.pts.length; i++) {
@@ -264,23 +272,18 @@ function updateInspector() {
         ? fmt(S.V[S.hover], 2) : "—";
     }
     if (have) {
-      let lo = Infinity, hi = -Infinity, og = 0, op = 0;
+      let lo = Infinity, hi = -Infinity, og = 0;
       const g = m.g || 9.81;
       for (let i = 0; i < n; i++) {
         const v = S.V[i];
         if (v < lo) lo = v;
         if (v > hi) hi = v;
-        if (v > Math.sqrt(S.mupp * g * S.radii[i]) * 1.03) op++;
-        else if (v > Math.sqrt(S.mu * g * S.radii[i]) * 1.03) og++;
+        if (v > Math.sqrt(S.mu * g * S.radii[i]) * 1.03) og++;
       }
       if ($("insVrng")) $("insVrng").textContent = `${fmt(lo, 1)}–${fmt(hi, 1)}`;
       if ($("insOg")) {
         $("insOg").textContent = og;
         $("insOg").className = og ? "warn" : "ok";
-      }
-      if ($("insOp")) {
-        $("insOp").textContent = op;
-        $("insOp").className = op ? "bad" : "ok";
       }
       const lap = lapEstimate();
       if ($("insLap")) $("insLap").textContent = lap ? fmt(lap, 2) + " s" : "—";
@@ -398,21 +401,20 @@ function toggleDrawer(id) {
 function buildSettingsDrawer() {
   const d = $("settingsDrawer");
   d.innerHTML = `
-    <h3>VEHICLE / PHYSICS <span class="x" data-x>✕</span></h3>
+    <h3>VEHICLE / PHYSICS <span class="info" data-info="physics">i</span>
+      <span class="x" data-x>✕</span></h3>
     <div class="d-field"><label><span>Grip µ</span><b id="muVal">${fmt(S.mu, 2)}</b></label>
       <input type="range" id="muSld" min="0.30" max="1.20" step="0.01" value="${S.mu}"></div>
     <div class="d-field"><label><span>Max speed</span><b id="vmaxVal">${fmt(S.vmax, 1)} m/s</b></label>
       <input type="range" id="vmaxSld" min="2" max="12" step="0.5" value="${S.vmax}"></div>
-    <div class="d-field"><label><span>PP grip cap µ</span><b id="muppVal">${fmt(S.mupp, 2)}</b></label>
-      <input type="range" id="muppSld" min="0.50" max="1.50" step="0.01" value="${S.mupp}"></div>
     <div class="d-field"><label><span>Carpet grip µ</span><b id="mucVal">${fmt(S.muCarpet, 2)}</b></label>
       <input type="range" id="mucSld" min="0.30" max="1.50" step="0.01" value="${S.muCarpet}"></div>
     <label class="z-check"><input type="checkbox" id="unrChk"
       ${S.unrestricted ? "checked" : ""}> Unrestricted lateral (expert)</label>
-    <div class="d-note">a = µ·g feeds the velocity profile. The PP cap is
-    display-only: it marks where the car clips speed at runtime. Carpet µ
+    <div class="d-note">a = µ·g feeds the velocity profile. Carpet µ
     applies inside carpet zones only.</div>
-    <h3 class="d-sub">VEHICLE GEOMETRY</h3>
+    <h3 class="d-sub">VEHICLE GEOMETRY
+      <span class="info" data-info="geometry">i</span></h3>
     <div class="d-field"><label><span>Width</span><b id="vWVal">${fmt(S.veh.width, 3)} m</b></label>
       <input type="range" id="vWSld" min="0.15" max="0.50" step="0.005" value="${S.veh.width}"></div>
     <div class="d-field"><label><span>Wheelbase</span><b id="vLVal">${fmt(S.veh.wheelbase, 3)} m</b></label>
@@ -423,6 +425,9 @@ function buildSettingsDrawer() {
       <input type="range" id="vMSld" min="0" max="0.30" step="0.005" value="${S.veh.margin}"></div>
     <div class="d-note" id="rminNote"></div>`;
   d.querySelector("[data-x]").onclick = () => closeDrawers();
+  d.querySelectorAll("[data-info]").forEach((b) => {
+    b.onclick = () => openHelp(b.dataset.info);
+  });
   const wire = (sld, val, fmt2, set) => {
     $(sld).addEventListener("input", (e) => {
       const v = +e.target.value;
@@ -435,7 +440,6 @@ function buildSettingsDrawer() {
   };
   wire("muSld", "muVal", (v) => fmt(v, 2), (v) => S.mu = v);
   wire("vmaxSld", "vmaxVal", (v) => fmt(v, 1) + " m/s", (v) => S.vmax = v);
-  wire("muppSld", "muppVal", (v) => fmt(v, 2), (v) => S.mupp = v);
   wire("mucSld", "mucVal", (v) => fmt(v, 2), (v) => {
     S.muCarpet = v; S.carpet.mu = v;
   });
@@ -479,7 +483,8 @@ function buildOptimizeDrawer() {
   const d = $("optimizeDrawer");
   const r = S.optResult;
   d.innerHTML = `
-    <h3>RACELINE OPTIMIZER <span class="x" data-x>✕</span></h3>
+    <h3>RACELINE OPTIMIZER <span class="info" data-info="optimizer">i</span>
+      <span class="x" data-x>✕</span></h3>
     <div class="opt-methods">
       <div class="opt-m ${optMethod === "mincurv" ? "sel" : ""}" data-m="mincurv">
         <b>MIN CURVATURE</b><span>flattest line — highest apex speed (IQP)</span></div>
@@ -499,8 +504,13 @@ function buildOptimizeDrawer() {
       <button class="btn" id="optDiscard">DISCARD</button>
     </div>
     <div class="d-note">The optimizer always starts from the current
-    centerline corridor. Edit the map (mode 5) and the corridor follows.</div>`;
+    centerline corridor. Edit the map (mode 5) and the corridor follows.
+    The line keeps width/2 + safety margin off every wall — set both
+    under vehicle geometry.</div>`;
   d.querySelector("[data-x]").onclick = () => closeDrawers();
+  d.querySelectorAll("[data-info]").forEach((b) => {
+    b.onclick = () => openHelp(b.dataset.info);
+  });
   d.querySelectorAll(".opt-m").forEach((c) => {
     c.onclick = () => {
       optMethod = c.dataset.m;
@@ -542,9 +552,11 @@ function updateOptimizeDrawer(ev) {
     st.textContent = "cancelled";
   } else if (ev.status === "done" && ev.result) {
     st.className = "d-status ok";
-    st.textContent = ev.result.method === "mintime"
+    const clr = ev.result.margin != null
+      ? ` · ≥${ev.result.margin} m off walls` : "";
+    st.textContent = (ev.result.method === "mintime"
       ? `done — lap ${ev.result.lap_time}s @ w=${ev.result.weight}`
-      : `done — lap ${ev.result.lap_time}s`;
+      : `done — lap ${ev.result.lap_time}s`) + clr;
     if (ev.result.candidates) {
       $("optCands").innerHTML = ev.result.candidates.map((c) =>
         `<div class="opt-cand${c.w === ev.result.weight ? " best" : ""}">
@@ -750,11 +762,181 @@ function offerRestore(serverSess) {
   };
 }
 
+/* ---------------- help overlay ---------------- */
+/* Every topic explains three things: what the setting means, how the tool
+   realises it, and what lands in the exported CSV — because carpet zones
+   and certainty scores are conventions of our own manager / pure-pursuit
+   stack that other teams' stacks simply do not have. */
+const HELP_SECTIONS = [
+  ["modes", "MODES & WORKFLOW", `
+    <p>Typical flow: <b>MAP</b> (clean the map, get a centerline) →
+    <b>OPTIMIZE</b> (generate a raceline) → <b>SHAPE</b> (hand-tune) →
+    <b>COMPUTE/SPEED</b> (velocity profile) → optional <b>CARPET</b> /
+    <b>CERT</b> zones → <b>SAVE</b> or <b>UPLOAD</b>.</p>
+    <p><b>COMPUTE vs OPTIMIZE:</b> COMPUTE keeps the line where it is and
+    only recalculates the speed profile along it. OPTIMIZE moves the line
+    itself — it searches the track corridor for a faster geometry.</p>`],
+  ["shape", "SHAPE — edit the line geometry", `
+    <p>Drag anywhere on the line: a Gaussian falloff moves the grabbed
+    point most and its neighbours less (BRUSH sets the falloff width).
+    SMOOTH applies one Laplacian relaxation pass.</p>
+    <p>Colours show the corner radius against your car's physical limit:
+    red = below R<sub>min</sub> (the car cannot steer that tight, see
+    vehicle geometry), orange = tight, green = safe.</p>
+    <p><b>REVERSE</b> flips the driving direction. The chevron at the
+    start dot points along the direction of travel; after a flip, dots
+    run along the line for a few seconds so the new direction is obvious.
+    Reversing marks the speed profile stale — braking zones flip sides,
+    so press COMPUTE again.</p>`],
+  ["speed", "SPEED — velocity profile", `
+    <p>COMPUTE builds the profile in three passes: corner-limited speed
+    v = √(µ·g·R) per point, then a forward pass limited by acceleration,
+    then a backward pass limited by braking (friction-circle model, so
+    combined cornering + braking shares one grip budget).</p>
+    <p>In SPEED mode you paint on top of that: hold BOOST/REDUCE over a
+    section to raise/lower the target speed; the tool re-runs the
+    feasibility pass so targets never exceed physics (unless
+    "unrestricted lateral" is on). Orange rings mark points where the
+    target exceeds the grip limit µ.</p>
+    <p>CSV: speeds become the <code>v_mps</code> column.</p>`],
+  ["carpet", "CARPET — higher-grip zones", `
+    <p>Our race track has carpet patches with markedly more grip than the
+    bare floor. Draw a polygon over such a patch and the velocity profile
+    uses the higher "carpet grip µ" inside it — the car corners and
+    brakes harder there.</p>
+    <p>Realisation: per waypoint the tool checks which zone polygon
+    contains it and scales the friction limits (a<sub>lat</sub>,
+    a<sub>accel</sub>, a<sub>brake</sub>) by µ<sub>carpet</sub>/µ before
+    computing the profile.</p>
+    <p>CSV: <b>no extra column</b> — the zones bake into the
+    <code>v_mps</code> speeds. The polygons themselves are stored next to
+    the CSV in <code>&lt;name&gt;_carpet.json</code>, so only this tool
+    needs to understand them. Any pure-pursuit stack that reads
+    x/y/v profits without code changes.</p>`],
+  ["cert", "CERT — certainty zones (controller arbitration)", `
+    <p>This one is specific to our software stack: our manager node picks
+    per section between pure pursuit (follows the raceline, fast, needs
+    good localisation) and a reactive controller (follow-the-gap, robust,
+    ignores the raceline). The certainty score tells it which to trust:
+    1.0 = locked on the raceline, 0.0 = let the reactive controller
+    drive.</p>
+    <p>Draw a zone, set its score with the slider; "hard PP lock" /
+    "force reactive" override the blend completely.</p>
+    <p>CSV: with at least one zone, three extra columns are appended —
+    <code>certainty</code> (0..1 per waypoint),
+    <code>cert_lock</code>, <code>cert_force_reactive</code> (0/1
+    flags). Without zones the CSV stays plain
+    <code>x_m,y_m,v_mps</code>. Stacks without such an arbiter can
+    simply ignore the extra columns — x/y/v parsing stays untouched.</p>`],
+  ["map", "MAP — edit the occupancy grid", `
+    <p>Paint WALL/FREE/GREY directly onto the map (FILL flood-fills a
+    region) to close gaps, remove furniture or widen corners. LIVE CL
+    recomputes the centerline after every stroke; USE CL adopts it as the
+    working line.</p>
+    <p>The centerline comes from a skeleton of the free space: the map is
+    first eroded by half the car width + safety margin (so cone gaps
+    narrower than the car disappear), then thinned to a 1-px skeleton and
+    ordered into a loop. REGION restricts all of this to a polygon — use
+    it when the map contains free space that is not part of the
+    course.</p>
+    <p>SAVE MAP writes the edited PNG (+ yaml) next to the original.</p>`],
+  ["optimizer", "OPTIMIZER — generate a raceline", `
+    <p><b>MIN CURVATURE</b> finds the flattest line through the corridor:
+    it iteratively solves a constrained least-squares problem (IQP) that
+    minimises curvature while keeping the line inside the track bounds.
+    Flattest line = highest possible cornering speed.</p>
+    <p><b>MIN TIME</b> additionally trades curvature against path length:
+    it sweeps several blend weights, scores each candidate by simulated
+    lap time with your physics settings, and refines the winner. Use it
+    when the shortest way round beats the flattest.</p>
+    <p>Both respect the vehicle geometry: the corridor is shrunk by
+    width/2 + safety margin (Euclidean distance) before optimising, so
+    the result clears every wall by at least that much — the status line
+    shows the value used. Wider car or bigger margin ⇒ visibly different
+    line in tight sections and a slower lap.</p>
+    <p>The result appears as a ghost line; APPLY replaces the working
+    line (undoable), DISCARD drops it.</p>`],
+  ["physics", "PHYSICS — grip & speed limits", `
+    <p><b>Grip µ</b>: friction coefficient of the floor. Lateral limit
+    a = µ·g caps cornering speed (v = √(µ·g·R)) and, via the friction
+    circle, braking/acceleration. Our floor: ≈0.45; carpet ≈0.9.</p>
+    <p><b>Max speed</b>: hard cap on straights — what your drivetrain
+    actually reaches.</p>
+    <p><b>Carpet grip µ</b>: friction used inside carpet zones
+    (mode 3).</p>
+    <p><b>Unrestricted lateral</b> (expert): skip the cornering-speed
+    clamp and keep painted targets as-is — for testing how a controller
+    copes with infeasible profiles.</p>`],
+  ["geometry", "VEHICLE GEOMETRY — what the car can drive", `
+    <p><b>Width</b> + <b>wall safety margin</b>: the optimizer keeps the
+    line at least width/2 + margin away from every wall, and the
+    centerline ignores gaps narrower than the car (cone rows).</p>
+    <p><b>Wheelbase</b> + <b>max steering δ</b>: minimum turn radius by
+    bicycle model, R<sub>min</sub> = wheelbase / tan(δ). Everything
+    tighter is physically undrivable — those sections show red in SHAPE
+    mode and in the telemetry strip.</p>
+    <p>Changes recolour instantly; the optimizer uses the new values on
+    the next RUN.</p>`],
+  ["csv", "CSV FORMAT — what gets saved", `
+    <p>Plain comma-separated, one header line, one row per waypoint
+    (≈0.10 m spacing):</p>
+    <p><code>x_m,y_m</code> — geometry only (no profile computed)<br>
+    <code>x_m,y_m,v_mps</code> — with speed profile<br>
+    <code>x_m,y_m,v_mps,certainty,cert_lock,cert_force_reactive</code>
+    — when certainty zones exist (see CERT help)</p>
+    <p>Sidecars next to the CSV: <code>*_carpet.json</code> /
+    <code>*_certainty.json</code> keep the zone polygons editable;
+    <code>*.bak</code> is the previous version. UPLOAD copies the CSV
+    (and optionally sidecars + map) to the car via scp.</p>`],
+];
+
+function buildHelp() {
+  const o = $("helpOverlay");
+  o.innerHTML = `<div class="help-card">
+    <h2>HELP — PARAMETERS, METHODS &amp; FORMATS
+      <span class="x" data-x>✕</span></h2>
+    <nav class="help-nav">${HELP_SECTIONS.map(([id, t]) =>
+      `<button data-go="${id}">${t.split("—")[0].trim()}</button>`).join("")}
+    </nav>
+    ${HELP_SECTIONS.map(([id, t, body]) =>
+      `<section class="help-sec" id="help-${id}"><h3>${t}</h3>${body}</section>`)
+      .join("")}</div>`;
+  o.addEventListener("click", (e) => { if (e.target === o) closeHelp(); });
+  o.querySelector("[data-x]").onclick = closeHelp;
+  o.querySelectorAll("[data-go]").forEach((b) => {
+    b.onclick = () => openHelp(b.dataset.go);
+  });
+}
+
+export function openHelp(topic) {
+  const o = $("helpOverlay");
+  o.classList.add("on");
+  const sec = topic && $(`help-${topic}`);
+  const card = o.firstElementChild;
+  o.querySelectorAll(".help-sec").forEach((s) =>
+    s.classList.toggle("hl", s === sec));
+  if (sec) card.scrollTop = sec.offsetTop - 64;
+  else card.scrollTop = 0;
+  if (window.gsap) {
+    gsap.fromTo(card, { y: 16, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.3, ease: "power3.out" });
+  }
+}
+function closeHelp() { $("helpOverlay").classList.remove("on"); }
+
+function infoBtn(topic) {
+  const b = el("button", "info", "i");
+  b.title = "What is this? How is it realised?";
+  b.onclick = (e) => { e.stopPropagation(); openHelp(topic); };
+  return b;
+}
+
 /* ---------------- keyboard ---------------- */
 function initKeys() {
   const KEYS = [
     ["1–5", "switch mode"], ["F", "fit view"], ["C", "compute profile"],
-    ["O", "optimizer"], ["U", "upload"], ["⌘/Ctrl+S", "save CSV"],
+    ["O", "optimizer"], ["U", "upload"], ["D", "reverse direction"],
+    ["H", "help"], ["⌘/Ctrl+S", "save CSV"],
     ["⌘/Ctrl+Z", "undo"], ["⇧⌘Z", "redo"], ["Enter", "finish zone/region"],
     ["Esc", "cancel / close"], ["B / R", "boost / reduce"],
     ["[ / ]", "brush size"], ["?", "this overlay"],
@@ -784,6 +966,8 @@ function initKeys() {
       case "c": case "C": computeProfile(); break;
       case "o": case "O": toggleDrawer("optimizeDrawer"); break;
       case "u": case "U": toggleDrawer("uploadDrawer"); break;
+      case "d": case "D": reverseDirection(); break;
+      case "h": case "H": openHelp(); break;
       case "b": case "B":
         if (S.mode === "speed") { S.speedDir = 1; buildCtx(); } break;
       case "r": case "R":
@@ -792,7 +976,11 @@ function initKeys() {
       case "]": S.brush = Math.min(40, S.brush + 2); buildCtx(); break;
       case "Enter": finishDraft(); break;
       case "Escape":
-        if (!cancelDraft()) { closeDrawers(); $("keysOverlay").classList.remove("on"); }
+        if (!cancelDraft()) {
+          closeDrawers();
+          $("keysOverlay").classList.remove("on");
+          closeHelp();
+        }
         break;
       case "?": $("keysOverlay").classList.toggle("on"); break;
       default: return;
@@ -808,6 +996,7 @@ export function initUI(initData) {
   buildSettingsDrawer();
   buildOptimizeDrawer();
   buildUploadDrawer();
+  buildHelp();
   buildCtx();
   buildLegend();
   buildInspector();
@@ -834,6 +1023,7 @@ export function initUI(initData) {
   $("uploadBtn").onclick = () => toggleDrawer("uploadDrawer");
   $("saveBtn").onclick = doSave;
   $("gearBtn").onclick = () => toggleDrawer("settingsDrawer");
+  $("helpBtn").onclick = () => openHelp();
   document.querySelectorAll("#modes button").forEach((b) =>
     b.addEventListener("click", () => selectMode(b.dataset.mode)));
 

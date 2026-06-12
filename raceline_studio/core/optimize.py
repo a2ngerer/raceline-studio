@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.ndimage import (
-    binary_erosion, distance_transform_edt, minimum_filter1d,
-    uniform_filter1d,
+    distance_transform_edt, minimum_filter1d, uniform_filter1d,
 )
 from scipy.optimize import lsq_linear
 
@@ -122,6 +121,15 @@ def optimize_line(ref, drivable, origin, res, veh, closed, w_len=0.0,
     if margin is None:
         margin = max(0.0, 0.5 * veh.width + veh.safety_margin)
     snap = _drivable_snapper(drivable, origin, res, margin)
+    # The reference may start outside the corridor (e.g. a loaded raceline
+    # computed with a smaller vehicle margin). From an off-corridor point
+    # the normal cast returns zero bounds and the point can never move —
+    # it gets pixel-snapped every pass and the line keeps the kink. Pull
+    # the whole line inside once, then smooth the snap zigzag away before
+    # the first solve.
+    pts = smooth_and_resample(snap(pts), closed=closed, spacing=spacing,
+                              smoothing=0.5)
+    pts = snap(pts)
     for it in range(max(1, iters)):
         if cancel is not None and cancel.is_set():
             raise JobCancelled
@@ -190,17 +198,22 @@ def run_optimization(method, raw, res, origin, closed, cline_xy,
     rmask = region_mask_from_polygon(region_xy, free.shape, origin, res)
     if rmask is not None:
         free = free & rmask  # optimizer respects the centerline region too
-    # Bake most of the vehicle margin into the corridor mask itself: erode
-    # the free space by the half width + safety margin before flooding.
-    # This (a) closes gaps narrower than the vehicle (cone rows, dotted
-    # dividers) so neither the flood nor the normal cast can leak through,
-    # and (b) prevents the cast from jumping hairline diagonal walls.
+    # Bake the vehicle margin into the corridor mask itself: erode the free
+    # space by the half width + safety margin before flooding. This (a)
+    # closes gaps narrower than the vehicle (cone rows, dotted dividers) so
+    # neither the flood nor the normal cast can leak through, and (b)
+    # prevents the cast from jumping hairline diagonal walls. The erosion is
+    # Euclidean (distance transform) — an iterated cross-shaped erosion
+    # would guarantee only ~70 % of the margin towards diagonal walls.
     margin = max(0.0, 0.5 * veh_geo.width + veh_geo.safety_margin)
-    margin_px = max(1, int(margin / res))
-    eroded = binary_erosion(free, iterations=margin_px)
+    depth_px = distance_transform_edt(free)
+    eroded = depth_px >= margin / res
     if eroded.any():
         free = eroded
-        margin_resid = max(0.0, margin - margin_px * res)
+        # One extra pixel as a soft IQP bound: without it the solution rides
+        # the pixel staircase of the eroded mask and kinks at apex corners
+        # (curvature spikes -> the velocity profile collapses locally).
+        margin_resid = res
     else:
         margin_resid = margin  # ultra-narrow map: keep the soft margin only
     drivable = corridor_mask_from_centerline(free, cline_rc[ib])
@@ -226,7 +239,8 @@ def run_optimization(method, raw, res, origin, closed, cline_xy,
                             cancel=cancel, progress=it_prog)
         v, t = score(opt)
         return {"method": "mincurv", "pts": opt.tolist(),
-                "v": [float(x) for x in v], "lap_time": round(t, 3)}
+                "v": [float(x) for x in v], "lap_time": round(t, 3),
+                "margin": round(margin, 3)}
 
     # --- min time: sweep curvature/length blends, score by lap time -------
     candidates = []
@@ -251,6 +265,6 @@ def run_optimization(method, raw, res, origin, closed, cline_xy,
     v, t = score(opt)
     return {"method": "mintime", "pts": opt.tolist(),
             "v": [float(x) for x in v], "lap_time": round(t, 3),
-            "weight": best_w,
+            "weight": best_w, "margin": round(margin, 3),
             "candidates": [{"w": wt, "lap_time": round(tt, 3)}
                            for tt, wt in candidates]}

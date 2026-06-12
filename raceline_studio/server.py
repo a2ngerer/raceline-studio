@@ -318,7 +318,6 @@ def build_state(args) -> None:
     certainty = load_certainty(args.out)
     session = load_session(args.out)
 
-    a_lat_ppcap = 8.0
     upload_cfg = {"host": "", "user": "", "port": 22,
                   "dest": "~/racelines/"}
     if session and isinstance(session.get("upload"), dict):
@@ -341,7 +340,6 @@ def build_state(args) -> None:
                   "safety_margin": float(veh.safety_margin),
                   "v_max": float(veh.v_max), "v_min": float(veh.v_min),
                   "mu": round(float(veh.a_lat_max) / 9.81, 3),
-                  "mu_pp": round(float(a_lat_ppcap) / 9.81, 3),
                   "mu_carpet": float(carpet.get("mu", 0.9)),
                   "carpet_zones": carpet.get("zones", []),
                   "certainty_zones": certainty.get("zones", []),

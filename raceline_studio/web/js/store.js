@@ -17,7 +17,7 @@ export const S = {
   mode: "shape", speedDir: 1, brush: 12,
   mapTool: "wall", mapBrushPx: 6, liveCenterline: true,
   clRegion: null,           // world polygon limiting centerline computation
-  mu: 0.45, vmax: 7, mupp: 0.82, muCarpet: 0.9, unrestricted: false,
+  mu: 0.45, vmax: 7, muCarpet: 0.9, unrestricted: false,
   // vehicle geometry — drives R_min display and the optimizer wall margin
   veh: { wheelbase: 0.31, width: 0.296, steerDeg: 24, margin: 0.10 },
   carpet: { mu: 0.9, zones: [] },
@@ -198,7 +198,7 @@ const lsKey = () => `rlstudio:${S.meta ? S.meta.track : "?"}`;
 export function serializeSession() {
   return {
     pts: S.pts, v: S.V, v_targets: S.vT, vStale: S.vStale, dirty: S.dirty,
-    settings: { mu: S.mu, v_max: S.vmax, mu_pp: S.mupp,
+    settings: { mu: S.mu, v_max: S.vmax,
                 mu_carpet: S.muCarpet, unrestricted: S.unrestricted },
     veh: { ...S.veh },
     carpet: S.carpet, certainty: S.certainty,
@@ -218,7 +218,6 @@ export function applySession(sess) {
   const st = sess.settings || {};
   if (isFinite(st.mu)) S.mu = st.mu;
   if (isFinite(st.v_max)) S.vmax = st.v_max;
-  if (isFinite(st.mu_pp)) S.mupp = st.mu_pp;
   if (isFinite(st.mu_carpet)) S.muCarpet = st.mu_carpet;
   S.unrestricted = !!st.unrestricted;
   if (sess.carpet && Array.isArray(sess.carpet.zones)) S.carpet = sess.carpet;
@@ -298,7 +297,7 @@ export function initStore(d) {
   S.meta = d.meta;
   S.out = d.out || "";
   S.lines = d.lines || {};
-  S.mu = d.meta.mu; S.vmax = d.meta.v_max; S.mupp = d.meta.mu_pp;
+  S.mu = d.meta.mu; S.vmax = d.meta.v_max;
   S.muCarpet = d.meta.mu_carpet ?? 0.9;
   S.veh = {
     wheelbase: d.meta.wheelbase ?? 0.31,

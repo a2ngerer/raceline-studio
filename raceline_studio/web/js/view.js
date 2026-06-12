@@ -58,6 +58,15 @@ export function brushPxRadius() {
 
 export function setCursor(c) { cursor = c; requestRender(); }
 
+/* direction pulse: dots run along the working line in driving direction
+   for a few seconds — triggered after REVERSE so the new direction is
+   unmistakable (the static chevron at the start point is easy to miss). */
+let flowUntil = 0;
+export function showDirectionPulse(ms = 4000) {
+  flowUntil = performance.now() + ms;
+  requestRender();
+}
+
 /* ---------- map canvas (editable surface) ---------- */
 export function getMapCanvas() { return mapCanvas; }
 export function mapPng() { return mapCanvas.toDataURL("image/png"); }
@@ -317,9 +326,7 @@ function render() {
       for (let j = 0; j < n; j++) {
         const R = S.radii[j];
         const vGrip = Math.sqrt(S.mu * g * R);
-        const vPP = Math.sqrt(S.mupp * g * R);
-        if (S.V[j] > vPP * 1.03) ctx.strokeStyle = COL.bad;
-        else if (S.V[j] > vGrip * 1.03) ctx.strokeStyle = COL.warn;
+        if (S.V[j] > vGrip * 1.03) ctx.strokeStyle = COL.warn;
         else continue;
         const [x, y] = worldToCanvas(S.pts[j][0], S.pts[j][1]);
         ctx.beginPath();
@@ -362,6 +369,33 @@ function render() {
       ctx.moveTo(5, 0); ctx.lineTo(-4, -4.5); ctx.lineTo(-1.5, 0);
       ctx.lineTo(-4, 4.5); ctx.closePath();
       ctx.fill();
+      ctx.restore();
+    }
+
+    // direction pulse dots (see showDirectionPulse)
+    const flowLeft = flowUntil - performance.now();
+    if (flowLeft > 0 && n > 4) {
+      const { s, total } = arcLengthData(S.pts, m.closed);
+      const gap = Math.max(1.2, total / 36);   // ~36 dots on a full lap
+      const off = (performance.now() * 0.001 * 5.0) % gap; // 5 m/s march
+      const alpha = Math.min(1, flowLeft / 600);           // fade out
+      ctx.save();
+      ctx.fillStyle = `rgba(255,255,255,${0.95 * alpha})`;
+      ctx.shadowColor = "rgba(69,227,255,.8)";
+      ctx.shadowBlur = 7;
+      let j = 0;
+      for (let d = off; d < total; d += gap) {
+        while (j < n - 1 && s[j + 1] < d) j++;
+        const j2 = (j + 1) % n;
+        const s1 = j2 === 0 ? total : s[j2];
+        const f = s1 > s[j] ? (d - s[j]) / (s1 - s[j]) : 0;
+        const x = S.pts[j][0] + (S.pts[j2][0] - S.pts[j][0]) * f;
+        const y = S.pts[j][1] + (S.pts[j2][1] - S.pts[j][1]) * f;
+        const [dx, dy] = worldToCanvas(x, y);
+        ctx.beginPath();
+        ctx.arc(dx, dy, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     }
 
@@ -569,7 +603,8 @@ export function initView(mapImg) {
 
   // render loop — redraw on demand; keep dashes marching while ghosts live
   const loop = () => {
-    const animating = Object.keys(S.ghosts).length > 0;
+    const animating = Object.keys(S.ghosts).length > 0
+      || performance.now() < flowUntil;
     if (animating) dashPhase = (dashPhase + 0.45) % 1000;
     if (needsRender || animating) {
       needsRender = false;

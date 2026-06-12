@@ -103,6 +103,11 @@ def test_optimizer_respects_vehicle_geometry(demo_map):
                                safety_margin=0.20)
     c_narrow, c_wide = min_clearance(narrow), min_clearance(wide)
     assert c_wide > c_narrow + 0.1, (c_narrow, c_wide)
+    # The requested wall clearance (width/2 + safety margin) must actually
+    # be met, up to one map pixel of discretisation.
+    res = 0.05
+    assert c_narrow >= 0.5 * narrow.width + narrow.safety_margin - res
+    assert c_wide >= 0.5 * wide.width + wide.safety_margin - res
 
 
 def test_optimize_mincurv(demo_map):

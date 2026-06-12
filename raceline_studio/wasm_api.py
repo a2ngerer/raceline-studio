@@ -79,7 +79,6 @@ def studio_init() -> str:
               "safety_margin": float(veh.safety_margin),
               "v_max": float(veh.v_max), "v_min": float(veh.v_min),
               "mu": round(float(veh.a_lat_max) / 9.81, 3),
-              "mu_pp": round(8.0 / 9.81, 3),
               "mu_carpet": 0.9,
               "carpet_zones": [], "certainty_zones": [],
               "cert_neutral": 0.5,
